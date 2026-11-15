@@ -13,7 +13,7 @@ function signUp(email: string, name: string) {
 }
 
 beforeAll(async () => {
-  server = await startServer({ SIGNUP_EMAIL_DOMAINS: 'jointhetroops.com, partner.test' })
+  server = await startServer({ SIGNUP_EMAIL_DOMAINS: 'jointhetroops.com, partner.test, vip@solo.test' })
   client = new Client(server)
 }, 70_000)
 
@@ -33,5 +33,13 @@ describe('signup domain restrictions', () => {
 
     const exists = await client.post('/api/account-exists', { email })
     expect(await exists.json()).toEqual({ exists: false })
+  })
+
+  it('accepts a configured full address but not other addresses on its domain', async () => {
+    const ok = await signUp('VIP@solo.test', 'The One')
+    expect(ok.status, await ok.text()).toBe(200)
+    const no = await signUp('someone@solo.test', 'Someone Else')
+    expect(no.status).toBe(400)
+    expect((await no.json()).message).toContain('vip@solo.test')
   })
 })
