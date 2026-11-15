@@ -35,6 +35,7 @@ async function client(): Promise<S3Client> {
     s3 = new S3Client({
       region: env.REGION,
       endpoint: env.ENDPOINT,
+      forcePathStyle: env.S3_PATH_STYLE,
       credentials:
         env.ACCESS_KEY_ID && env.SECRET_ACCESS_KEY
           ? { accessKeyId: env.ACCESS_KEY_ID, secretAccessKey: env.SECRET_ACCESS_KEY }
@@ -85,4 +86,19 @@ export async function getObject(key: string, signal?: AbortSignal): Promise<Buff
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw e
   }
+}
+
+/* Export bucket: a separate bucket (own lifecycle rule) reached with the same
+   endpoint and credentials. Keys are `exports/<yyyymmdd>/<hex>-<name>.<ext>`;
+   the check below is the only thing standing between a tool argument and a
+   bucket key, so it stays a closed pattern. */
+const EXPORT_KEY = /^exports\/\d{8}\/[a-f0-9]{16}-[A-Za-z0-9_-]{1,80}\.[a-z0-9]{2,4}$/
+
+export async function putExport(key: string, body: Buffer, mime: string): Promise<void> {
+  if (!env.EXPORT_BUCKET) throw new Error('EXPORT_BUCKET is not configured')
+  if (!EXPORT_KEY.test(key)) throw new Error(`malformed export key: ${key}`)
+  const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+  await (
+    await client()
+  ).send(new PutObjectCommand({ Bucket: env.EXPORT_BUCKET, Key: key, Body: body, ContentType: mime }))
 }

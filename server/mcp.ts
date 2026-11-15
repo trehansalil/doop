@@ -46,7 +46,8 @@ import {
   selectPdfFrames,
   takePdfExportSlot,
 } from './pdfExport.ts'
-import { primeImage } from './previews.ts'
+import { getImage, primeImage } from './previews.ts'
+import { exportLinksEnabled, publishExport } from './exportLinks.ts'
 import {
   DEFAULT_EXPORT_SCALE,
   MAX_EXPORT_SCALE,
@@ -389,8 +390,27 @@ export function buildMcpServer(
       return err('PDF export rate limit — wait a minute before exporting again')
     try {
       const pdf = await renderFramesPdf(selection.frames)
-      if (pdf.length > MAX_MCP_PDF_BYTES) return err('The PDF is too large to return — export fewer frames at once')
       const fileName = pdfFileName(canvas, selection.frames)
+      /* with export links configured the file goes to the export bucket and
+         the result carries a time-limited link instead of a base64 blob; a
+         store failure falls through to the inline resource below */
+      let linkError: string | undefined
+      if (exportLinksEnabled()) {
+        try {
+          const link = await publishExport(pdf, { name: fileName.replace(/\.pdf$/i, ''), ext: 'pdf' })
+          return text({
+            file_name: fileName,
+            bytes: pdf.length,
+            pages: selection.frames.length,
+            download_url: link.url,
+            download_url_expires_at: link.expiresAt,
+            note: `Download the PDF from download_url before it expires (${Math.round(link.ttlSeconds / 3600)}h link). Each page is one frame at its own size, text stays selectable.`,
+          })
+        } catch (e) {
+          linkError = e instanceof Error ? e.message : String(e)
+        }
+      }
+      if (pdf.length > MAX_MCP_PDF_BYTES) return err('The PDF is too large to return — export fewer frames at once')
       return {
         content: [
           {
@@ -407,6 +427,7 @@ export function buildMcpServer(
               file_name: fileName,
               bytes: pdf.length,
               pages: selection.frames.length,
+              ...(linkError ? { download_url_error: linkError.slice(0, 160) } : {}),
               note: 'The PDF is the embedded application/pdf resource (base64). Save it to disk as the file name above; each page is one frame at its own size, text stays selectable.',
             }),
           },
@@ -1544,7 +1565,33 @@ export function buildMcpServer(
       const q = ext === 'jpg' ? `&quality=${quality ?? 90}` : ''
       const density = fitExportScale(f, parseExportScale(scale ?? DEFAULT_EXPORT_SCALE) ?? DEFAULT_EXPORT_SCALE)
       const pixels = exportPixelSize(f, density)
+      /* time-limited link: render, upload to the export bucket, presign. Any
+         failure leaves the permanent /i/ URLs below as the answer. */
+      let link: { export_url: string; export_url_expires_at: string } | { export_url_error: string } | undefined
+      if (exportLinksEnabled()) {
+        try {
+          const img = await getImage(f, {
+            ext,
+            scale: density,
+            quality: quality ?? 90,
+            preview: false,
+            ip: ownerId ?? `mcp:${owner ?? 'anonymous'}`,
+            /* the caller already passed frameFor(…, 'view'); only the
+               per-IP anonymous-hotlink budget is at stake here */
+            isAuthenticated: async () => !!ownerId,
+          })
+          if (img.status === 'rate-limited') {
+            link = { export_url_error: 'render rate limit — wait a minute and export again' }
+          } else {
+            const published = await publishExport(img.buf, { name: f.name || 'frame', ext })
+            link = { export_url: published.url, export_url_expires_at: published.expiresAt }
+          }
+        } catch (e) {
+          link = { export_url_error: (e instanceof Error ? e.message : String(e)).slice(0, 160) }
+        }
+      }
       return text({
+        ...link,
         image_url: `${env.BETTER_AUTH_URL}/i/${frame_id}.${ext}?scale=${density}${q}`,
         download_url: `${env.BETTER_AUTH_URL}/i/${frame_id}.${ext}?scale=${density}${q}&download`,
         scale: density,

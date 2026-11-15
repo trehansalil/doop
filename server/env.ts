@@ -245,6 +245,20 @@ const schema = {
   SECRET_ACCESS_KEY: str({ default: undefined }),
   ENDPOINT: str({ default: undefined }),
   REGION: str({ default: 'auto' }),
+  /* MinIO and most self-hosted stores need path-style addressing
+     (endpoint/bucket/key); AWS, R2 and Railway buckets do not */
+  S3_PATH_STYLE: bool({ default: false }),
+
+  /* ------------------------------------------- export download links */
+  /* export_frame uploads the render to EXPORT_BUCKET (same ENDPOINT and
+     credentials as BUCKET) and returns a presigned link instead of the
+     permanent /i/ URL. EXPORT_PUBLIC_URL is the origin the link is served
+     from — it is part of the signature, so it must be what the client
+     reaches (a reverse-proxy route to the store). All three unset = the
+     stock behaviour. TTL is seconds; S3 caps a presigned URL at 7 days. */
+  EXPORT_BUCKET: str({ default: undefined }),
+  EXPORT_PUBLIC_URL: origin({ default: undefined }),
+  EXPORT_LINK_TTL_SECONDS: int(60)({ default: 24 * 3600 }),
 
   /* -------------------------------------------------------- billing */
   STRIPE_SECRET_KEY: str({ default: undefined }),
