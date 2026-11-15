@@ -21,13 +21,7 @@ import { putExport } from './storage.ts'
 const MAX_TTL_SECONDS = 7 * 24 * 3600
 
 export function exportLinksEnabled(): boolean {
-  return !!(
-    env.EXPORT_BUCKET &&
-    env.EXPORT_PUBLIC_URL &&
-    env.ENDPOINT &&
-    env.ACCESS_KEY_ID &&
-    env.SECRET_ACCESS_KEY
-  )
+  return !!(env.EXPORT_BUCKET && env.EXPORT_PUBLIC_URL && env.ENDPOINT && env.ACCESS_KEY_ID && env.SECRET_ACCESS_KEY)
 }
 
 export function exportLinkTtlSeconds(): number {
@@ -37,7 +31,8 @@ export function exportLinkTtlSeconds(): number {
 const hmac = (key: Buffer | string, msg: string) => createHmac('sha256', key).update(msg).digest()
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex')
 /* RFC 3986 unreserved set, the encoding SigV4 canonical requests use */
-const enc = (s: string) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+const enc = (s: string) =>
+  encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
 
 export interface PresignInput {
   /** origin the client will request, e.g. https://doop-mcp.saliltrehan.com */
@@ -54,7 +49,10 @@ export interface PresignInput {
 /** Path-style SigV4 presigned GET: `<publicUrl>/<bucket>/<key>?X-Amz-…`. */
 export function presignGet(i: PresignInput): { url: string; expiresAt: Date } {
   const now = i.now ?? new Date()
-  const amzDate = now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+  const amzDate = now
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}/, '')
   const day = amzDate.slice(0, 8)
   const scope = `${day}/${i.region}/s3/aws4_request`
   const { host } = new URL(i.publicUrl)
@@ -100,7 +98,11 @@ export async function publishExport(
   if (!exportLinksEnabled()) throw new Error('export links are not configured')
   const mime = { png: 'image/png', jpg: 'image/jpeg', pdf: 'application/pdf' }[opts.ext]
   const day = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-  const name = opts.name.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'export'
+  const name =
+    opts.name
+      .replace(/[^A-Za-z0-9_-]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 80) || 'export'
   const key = `exports/${day}/${randomBytes(8).toString('hex')}-${name}.${opts.ext}`
   await putExport(key, buf, mime)
   const ttlSeconds = exportLinkTtlSeconds()

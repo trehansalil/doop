@@ -353,9 +353,11 @@ function assertSignupDomainAllowed(email: string): void {
   if (!SIGNUP_EMAIL_DOMAINS.length) return
   const lowered = email.toLowerCase()
   const domain = lowered.slice(lowered.lastIndexOf('@') + 1)
-  if (SIGNUP_EMAIL_DOMAINS.includes(domain)) return
+  /* an entry with an '@' inside is a single full address (lock an instance to
+     one person), anything else is a whole domain */
+  if (SIGNUP_EMAIL_DOMAINS.includes(domain) || SIGNUP_EMAIL_DOMAINS.includes(lowered)) return
   throw new APIError('BAD_REQUEST', {
-    message: `Sign up is restricted to ${SIGNUP_EMAIL_DOMAINS.map((d) => `@${d}`).join(', ')} email addresses.`,
+    message: `Sign up is restricted to ${SIGNUP_EMAIL_DOMAINS.map((d) => (d.includes('@') ? d : `@${d}`)).join(', ')} email addresses.`,
   })
 }
 
